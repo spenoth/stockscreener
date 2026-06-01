@@ -1,6 +1,6 @@
 -- get all the tickers that are above their 
 -- bull market support band according to the latest bmsb screening
-SELECT wi.ticker
+SELECT wi.ticker, wv.version
 FROM quant.watchlist_items wi
 JOIN quant.watchlist_versions wv
     ON wi.watchlist_version_id = wv.id
