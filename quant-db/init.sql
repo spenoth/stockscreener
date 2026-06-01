@@ -99,26 +99,33 @@ CREATE TABLE quant.watchlist_snapshots (
 CREATE INDEX quant_idx_watchlist_week
     ON quant.watchlist_snapshots (week_id);
 
-CREATE TABLE quant.watchlist_items (
-                                       id BIGSERIAL PRIMARY KEY,
-                                       snapshot_id BIGINT NOT NULL,
-                                       ticker TEXT NOT NULL,
-
-                                       created_at TIMESTAMPTZ DEFAULT NOW(),
-
-                                       CONSTRAINT fk_snapshot
-                                           FOREIGN KEY (snapshot_id)
-                                               REFERENCES quant.watchlist_snapshots(id)
-                                               ON DELETE CASCADE,
-
-                                       CONSTRAINT unique_item UNIQUE (snapshot_id, ticker)
+CREATE TABLE quant.watchlists (
+    id BIGSERIAL PRIMARY KEY,
+    name TEXT NOT NULL UNIQUE
 );
 
-CREATE INDEX quant_idx_watchlist_items_snapshot
-    ON quant.watchlist_items (snapshot_id);
+CREATE TABLE quant.watchlist_versions (
+    id BIGSERIAL PRIMARY KEY,
+    watchlist_id BIGINT NOT NULL,
+    version BIGINT NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
 
-CREATE INDEX quant_idx_watchlist_items_ticker
-    ON quant.watchlist_items (ticker);
+    FOREIGN KEY (watchlist_id)
+        REFERENCES quant.watchlists(id),
+
+    UNIQUE(watchlist_id, version)
+);
+
+CREATE TABLE quant.watchlist_items (
+    id BIGSERIAL PRIMARY KEY,
+    watchlist_version_id BIGINT NOT NULL,
+    ticker TEXT NOT NULL,
+
+    FOREIGN KEY (watchlist_version_id)
+        REFERENCES quant.watchlist_versions(id),
+
+    UNIQUE(watchlist_version_id, ticker)
+);
 
 CREATE TABLE quant.tickers (
                                id BIGSERIAL PRIMARY KEY,
@@ -144,3 +151,12 @@ INSERT INTO quant.tickers (symbol, name, exchange, active) VALUES
     ('MSCI', 'MSCI Inc.', 'NYSE', false),
     ('MAIN', 'Main Street Capital Corporation', 'NYSE', false)
 ON CONFLICT (symbol) DO NOTHING;
+
+INSERT INTO quant.watchlists (name)
+VALUES
+    ('BMSB_ABOVE'),
+    ('BMSB_DISCOUNT'),
+--    ('SUPERTREND_BULLISH'),
+--    ('SMA20_BOUNCE'),
+--    ('RSI_OVERSOLD')
+ON CONFLICT (name) DO NOTHING;
