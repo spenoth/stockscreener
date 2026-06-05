@@ -1,0 +1,42 @@
+<div class="stock-list-container">
+  <!-- Loading State -->
+  <div *ngIf="loading" class="loading" data-testid="loading">
+    Loading…
+  </div>
+
+  <!-- Error State -->
+  <div *ngIf="!loading && error" class="error-message" data-testid="error">
+    Unable to load screener results. Please try again later.
+  </div>
+
+  <!-- Empty State -->
+  <div *ngIf="!loading && !error && stocks.length === 0" class="empty-message" data-testid="empty">
+    No stocks passed the latest screening. This may indicate market conditions did not meet the screener criteria.
+  </div>
+
+  <!-- Data State -->
+  <table *ngIf="!loading && !error && stocks.length > 0" class="stock-table" data-testid="stock-table">
+    <thead>
+      <tr>
+        <th>Symbol</th>
+        <th>Exchange</th>
+        <th>Chart</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr *ngFor="let stock of stocks">
+        <td>{{ stock.symbol }}</td>
+        <td>{{ stock.exchange }}</td>
+        <td>
+          <a *ngIf="hasValidExchange(stock)"
+             [href]="getTradingViewUrl(stock)"
+             target="_blank"
+             rel="noopener noreferrer">
+            View on TradingView
+          </a>
+        </td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+

@@ -1,0 +1,4 @@
+# Default ignored files
+angular-client/node_modules
+angular-client/dist
+.idea

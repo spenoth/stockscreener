@@ -34,6 +34,35 @@ services:
         /entrypoint.sh
       "
 
+  api:
+    build:
+      context: ../api
+      dockerfile: Dockerfile
+    container_name: stockscreener_api
+    restart: always
+    environment:
+      DB_HOST: db
+      DB_PORT: "5432"
+      DB_NAME: mydb
+      DB_USER: myuser
+      DB_PASSWORD: mypassword
+      API_PORT: "8000"
+    ports:
+      - "8000:8000"
+    depends_on:
+      - db
+
+  client:
+    build:
+      context: ../angular-client
+      dockerfile: Dockerfile
+    container_name: stockscreener_client
+    restart: always
+    ports:
+      - "4200:80"
+    depends_on:
+      - api
+
 volumes:
   postgres_data:
   pgadmin_data:

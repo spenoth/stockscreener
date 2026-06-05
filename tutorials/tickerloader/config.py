@@ -1,8 +1,5 @@
 import os
 
-API_KEY = os.environ.get("ALPACA_API_KEY", "XXXXXXXXXXXXXXXXXX")
-API_SECRET = os.environ.get("ALPACA_API_SECRET", "XXXXXXXXXXXXXXXXX")
-
 DB_CONFIG = {
     "host":     os.environ.get("PGHOST",     "localhost"),
     "dbname":   os.environ.get("PGDATABASE", "mydb"),

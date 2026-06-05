@@ -109,6 +109,10 @@ CREATE TABLE quant.watchlist_versions (
     watchlist_id BIGINT NOT NULL,
     version BIGINT NOT NULL,
     created_at TIMESTAMPTZ DEFAULT NOW(),
+    run_outcome   TEXT,
+    total_tickers INTEGER,
+    scanned_count INTEGER,
+    failed_count  INTEGER,
 
     FOREIGN KEY (watchlist_id)
         REFERENCES quant.watchlists(id),
@@ -131,6 +135,7 @@ CREATE TABLE quant.tickers (
                                id BIGSERIAL PRIMARY KEY,
                                symbol TEXT NOT NULL UNIQUE,
                                name TEXT,
+                               exchange TEXT,
                                active BOOLEAN DEFAULT TRUE,
                                created_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -138,8 +143,6 @@ CREATE TABLE quant.tickers (
 CREATE INDEX quant_idx_tickers_active
     ON quant.tickers (active);
 
-ALTER TABLE quant.tickers
-    ADD COLUMN exchange TEXT;
 
 -- Seed tickers
 INSERT INTO quant.tickers (symbol, name, exchange, active) VALUES
@@ -155,8 +158,39 @@ ON CONFLICT (symbol) DO NOTHING;
 INSERT INTO quant.watchlists (name)
 VALUES
     ('BMSB_ABOVE'),
-    ('BMSB_DISCOUNT'),
+    ('BMSB_DISCOUNT')
 --    ('SUPERTREND_BULLISH'),
 --    ('SMA20_BOUNCE'),
 --    ('RSI_OVERSOLD')
 ON CONFLICT (name) DO NOTHING;
+
+-- Wave 1 – F-03: Exchange completeness verification.
+-- Run this query after seeding to confirm no active ticker is missing exchange data.
+-- Must return 0 rows before a production run (active_tickers_missing_exchange).
+-- SELECT symbol FROM quant.tickers WHERE active = true AND (exchange IS NULL OR exchange = '');
+-- active_tickers_missing_exchange
+
+-- Wave 1 – F-04: canonical view for current passing BMSB_ABOVE stocks
+-- "Latest version" = watchlist_version with the most recent created_at for BMSB_ABOVE.
+-- Returns empty set when latest version has zero items (BR-8).
+-- Scoped exclusively to BMSB_ABOVE (BR-9).
+CREATE OR REPLACE VIEW quant.v_current_bmsb AS
+SELECT
+    wi.ticker  AS symbol,
+    t.exchange AS exchange
+FROM quant.watchlist_items wi
+         JOIN quant.watchlist_versions wv
+              ON wi.watchlist_version_id = wv.id
+         JOIN quant.watchlists wl
+              ON wv.watchlist_id = wl.id
+         JOIN quant.tickers t
+              ON wi.ticker = t.symbol
+WHERE wl.name = 'BMSB_ABOVE'
+  AND wv.id = (
+    SELECT wv2.id
+    FROM quant.watchlist_versions wv2
+             JOIN quant.watchlists wl2 ON wv2.watchlist_id = wl2.id
+    WHERE wl2.name = 'BMSB_ABOVE'
+    ORDER BY wv2.created_at DESC, wv2.id DESC
+    LIMIT 1
+    );

@@ -1,0 +1,58 @@
+.stock-list-container {
+  max-width: 800px;
+  margin: 0 auto;
+}
+
+.loading {
+  text-align: center;
+  padding: 40px;
+  font-size: 1.2em;
+  color: #666;
+}
+
+.error-message {
+  text-align: center;
+  padding: 40px;
+  color: #d32f2f;
+  background: #ffebee;
+  border-radius: 4px;
+}
+
+.empty-message {
+  text-align: center;
+  padding: 40px;
+  color: #1565c0;
+  background: #e3f2fd;
+  border-radius: 4px;
+}
+
+.stock-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.stock-table th,
+.stock-table td {
+  padding: 12px 16px;
+  text-align: left;
+  border-bottom: 1px solid #ddd;
+}
+
+.stock-table th {
+  background: #fafafa;
+  font-weight: 600;
+}
+
+.stock-table tr:hover {
+  background: #f5f5f5;
+}
+
+.stock-table a {
+  color: #1976d2;
+  text-decoration: none;
+}
+
+.stock-table a:hover {
+  text-decoration: underline;
+}
+
