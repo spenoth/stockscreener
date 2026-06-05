@@ -2,3 +2,5 @@
 angular-client/node_modules
 angular-client/dist
 .idea
+angular-client/.angular
+angular-client/package-lock.json
