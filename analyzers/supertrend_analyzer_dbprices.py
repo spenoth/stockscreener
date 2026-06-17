@@ -1,13 +1,10 @@
 import numpy as np
 import pandas as pd
 import pandas_ta as ta
+import matplotlib.pyplot as plt
 
 from datetime import datetime
 import pytz
-
-from alpaca.data.historical import StockHistoricalDataClient
-from alpaca.data.requests import StockBarsRequest
-from alpaca.data.timeframe import TimeFrame
 
 import psycopg2
 
@@ -17,12 +14,21 @@ def calculate_supertrend(
         multiplier=3.0
 ):
     """
-    Adds SuperTrend columns to dataframe.
+    Calculates the SuperTrend indicator and appends it to the dataframe.
+
+    SuperTrend is a trend-following indicator based on ATR (Average True Range).
+    It switches between bullish (+1) and bearish (-1) direction when price
+    crosses the upper or lower band.
+
+    Args:
+        df (pd.DataFrame): OHLCV dataframe with columns: open, high, low, close.
+        length (int):      ATR period used for band calculation. Default: 10.
+        multiplier (float): ATR multiplier that controls band width. Default: 3.0.
 
     Returns:
-        Original dataframe with:
-            supertrend
-            supertrend_direction
+        pd.DataFrame: Copy of the input dataframe with two additional columns:
+            - supertrend:           the raw SuperTrend line value (price level)
+            - supertrend_direction: +1 = bullish trend, -1 = bearish trend
     """
 
     st = ta.supertrend(
@@ -45,12 +51,24 @@ def calculate_supertrend(
 
 def find_supertrend_starts(df):
     """
-    Returns timestamps where
-    SuperTrend switches bearish -> bullish.
+    Finds all timestamps where the SuperTrend flips from bearish to bullish.
+
+    A bullish start is defined as:
+        - previous bar: supertrend_direction == -1  (bearish)
+        - current bar:  supertrend_direction == +1  (bullish)
+
+    These crossover points are used as trade entry signals.
+
+    Args:
+        df (pd.DataFrame): Dataframe with a 'supertrend_direction' column.
+
+    Returns:
+        list: Index values (timestamps) where a bearish -> bullish flip occurs.
     """
 
     direction = df["supertrend_direction"]
 
+    # Boolean mask: True only where the previous bar was -1 and current bar is +1
     mask = (
             (direction.shift(1) == -1)
             &
@@ -65,13 +83,27 @@ def extract_supertrend_path(
         max_hours=40
 ):
     """
-    Extract closes from signal start until:
+    Extracts the sequence of closing prices starting from a bullish signal.
 
-    - bearish reversal
-    - max_hours reached
-    - dataframe end
+    Walks forward bar by bar from the signal timestamp and collects closing
+    prices until one of the following exit conditions is met:
+        1. The SuperTrend flips back to bearish (direction == -1)
+        2. The maximum number of hours (bars) is reached
+        3. The end of the dataframe is reached
+
+    Note: The first bar (entry bar) is never counted as a bearish exit,
+    so a signal that immediately flips would still produce at least 1 close.
+
+    Args:
+        df (pd.DataFrame):      Dataframe with 'close' and 'supertrend_direction'.
+        start_timestamp:        Index value marking the entry bar.
+        max_hours (int):        Maximum number of bars to include. Default: 40.
+
+    Returns:
+        list[float]: Sequence of closing prices from entry until exit.
     """
 
+    # Locate the integer position of the entry bar
     start_pos = df.index.get_loc(start_timestamp)
 
     closes = []
@@ -80,6 +112,7 @@ def extract_supertrend_path(
 
         pos = start_pos + offset
 
+        # Stop if we've walked past the end of the dataframe
         if pos >= len(df):
             break
 
@@ -87,6 +120,8 @@ def extract_supertrend_path(
 
         closes.append(row["close"])
 
+        # Stop after the first bar if the trend has already reversed
+        # (offset > 0 prevents the entry bar itself from triggering an exit)
         if (
                 offset > 0
                 and row["supertrend_direction"] == -1
@@ -97,8 +132,22 @@ def extract_supertrend_path(
 
 def normalize_path(closes):
     """
-    Converts closes into % returns
-    relative to first close.
+    Converts a sequence of raw closing prices into percentage changes
+    relative to the first (entry) price.
+
+    Formula per bar:  ((price / base) - 1) * 100
+    This is equivalent to:  ((price - base) / base) * 100
+
+    Example:
+        closes = [100, 105, 95, 110]
+        result = [0.0, 5.0, -5.0, 10.0]
+
+    Args:
+        closes (list[float]): Raw closing prices starting from the entry bar.
+
+    Returns:
+        list[float]: Percentage change from entry for each bar.
+                     First element is always 0.0.
     """
 
     if len(closes) == 0:
@@ -111,17 +160,75 @@ def normalize_path(closes):
         for price in closes
     ]
 
+def classify_path(normalized_path):
+    """
+    Classifies a normalized path as positive or negative using two independent methods.
+
+    Methods:
+        - Endpoint: looks at the last value only.
+                    Answers: "Did this trade close in profit?"
+                    Best for evaluating final trade outcome.
+
+        - Mean:     looks at the average of all values.
+                    Answers: "Was this trade mostly above entry during its lifetime?"
+                    Useful for assessing holding comfort, even if it ended well.
+
+    Args:
+        normalized_path (list[float]): % change values from normalize_path().
+
+    Returns:
+        dict with keys:
+            - endpoint_positive (bool):  True if the path ended above entry
+            - mean_positive     (bool):  True if the average value was above entry
+            - endpoint          (float): Final % value
+            - mean               (float): Average % value across the path
+    """
+
+    endpoint = normalized_path[-1]
+    mean     = sum(normalized_path) / len(normalized_path)
+
+    return {
+        "endpoint_positive": endpoint > 0,
+        "mean_positive":     mean > 0,
+        "endpoint":          endpoint,
+        "mean":              mean,
+    }
+
 def build_all_supertrend_paths(
         df,
-        max_hours=40
+        max_hours=40,
+        max_paths=None
 ):
     """
-    Returns list of normalized paths.
+    Builds the full dataset of SuperTrend signal paths with classifications.
+
+    For every bullish SuperTrend start in the dataframe:
+        1. Extracts the raw price path (extract_supertrend_path)
+        2. Normalizes it to % change from entry (normalize_path)
+        3. Classifies it by endpoint and mean (classify_path)
+        4. Bundles path + classification into a single dict
+
+    Args:
+        df (pd.DataFrame): Dataframe with SuperTrend columns already calculated.
+        max_hours (int):   Maximum bars to include per path. Default: 40.
+        max_paths (int):   If set, only processes the first N signals. Default: all.
+
+    Returns:
+        list[dict]: One dict per signal, each containing:
+            - path               (list[float]): normalized % change values
+            - endpoint_positive  (bool):        did the path end above entry?
+            - mean_positive      (bool):        was the path mostly above entry?
+            - endpoint           (float):       final % value
+            - mean               (float):       average % value
     """
 
     starts = find_supertrend_starts(df)
 
-    paths = []
+    # Optionally cap the number of signals to process
+    if max_paths is not None:
+        starts = starts[:max_paths]
+
+    results = []
 
     for timestamp in starts:
 
@@ -131,37 +238,31 @@ def build_all_supertrend_paths(
             max_hours=max_hours
         )
 
+        # Skip signals with only 1 bar — no meaningful path to analyze
         if len(closes) < 2:
             continue
 
         normalized = normalize_path(closes)
+        classification = classify_path(normalized)
 
-        paths.append(normalized)
+        # Merge the path and its classification into one dict
+        results.append({
+            "path": normalized,
+            **classification
+        })
 
-    return paths
-
-# client = StockHistoricalDataClient(API_KEY, API_SECRET)
+    return results
 
 # =========================
 # TIME RANGE
 # =========================
+# Define the date range for filtering (used if fetching from Alpaca or similar APIs)
 start = pd.Timestamp("2016-01-01", tz="America/New_York")
 end   = pd.Timestamp("2025-12-31", tz="America/New_York")
 
-
-# # =========================
-# # REQUEST
-# # =========================
-# request = StockBarsRequest(
-#     symbol_or_symbols=["AAPL"],
-#     timeframe=TimeFrame.Hour,
-#     start=start,
-#     end=end,
-#     feed="sip"   # full market feed (important if you have access)
-# )
-#
-# bars = client.get_stock_bars(request)
-
+# =========================
+# DATABASE CONNECTION
+# =========================
 DB_CONFIG = {
     "host": "localhost",
     "dbname": "mydb",
@@ -169,36 +270,82 @@ DB_CONFIG = {
     "password": "mypassword"
 }
 
-# --- DB CONNECTION ---
+# Connect to PostgreSQL and fetch hourly TSLA OHLCV prices
 conn = psycopg2.connect(**DB_CONFIG)
 cur = conn.cursor()
 cur.execute("select timestamp, open, high, low, close from quant.prices where ticker='TSLA' and timeframe='1h' order by timestamp asc")
 rows = cur.fetchall()
+
+# Build a dataframe from the raw query results
 df = pd.DataFrame(rows, columns=["timestamp", "open", "high", "low", "close"])
 
-# convert from Decimal, which is what psycopg2 returns, to float
+# psycopg2 returns Decimal types — convert to float for numeric operations
 for col in ["open", "high", "low", "close"]:
     df[col] = pd.to_numeric(df[col])
 
 # =========================
-# DATAFRAME
+# SUPERTREND CALCULATION
 # =========================
-# df = bars.df
-
+# Append supertrend and supertrend_direction columns to the dataframe
 df_with_supertrend = calculate_supertrend(df)
 print("Dataframe with SuperTrend columns:")
-print(df_with_supertrend.head())
-print(df_with_supertrend.tail())
+print(df_with_supertrend.head(10))
+print(df_with_supertrend.tail(10))
 
-starts = find_supertrend_starts(df)
+# =========================
+# BUILD ALL PATHS
+# =========================
+# Extract, normalize, and classify every bullish SuperTrend signal in the data
+all_paths = build_all_supertrend_paths(df_with_supertrend, max_hours=40, max_paths=100)
 
-print(len(starts))
-print(starts[:5])
+print(f"Total normalized paths: {len(all_paths)}")
 
-# assuming this just extracts one path?
-path = extract_supertrend_path(
-    df,
-    starts[0]
-)
+# =========================
+# PLOT
+# =========================
+# Two side-by-side charts comparing endpoint vs mean classification
+# Green = positive signal, Red = negative signal
+fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 6), sharey=True)
 
-print(path)
+# --- Left plot: color-coded by endpoint (final % value) ---
+for entry in all_paths:
+    color = "green" if entry["endpoint_positive"] else "red"
+    ax1.plot(entry["path"], color=color, linewidth=0.8, alpha=0.3)
+
+ax1.axhline(0, color="gray", linestyle="--", linewidth=1)
+ax1.set_title("By Endpoint (last value)")
+ax1.set_xlabel("Hours since signal")
+ax1.set_ylabel("% change")
+ax1.grid(True)
+
+n_pos_ep = sum(e["endpoint_positive"] for e in all_paths)
+ax1.legend([
+    plt.Line2D([0], [0], color="green"),
+    plt.Line2D([0], [0], color="red"),
+], [
+    f"Positive endpoint ({n_pos_ep})",
+    f"Negative endpoint ({len(all_paths) - n_pos_ep})",
+])
+
+# --- Right plot: color-coded by mean (average % across the path) ---
+for entry in all_paths:
+    color = "green" if entry["mean_positive"] else "red"
+    ax2.plot(entry["path"], color=color, linewidth=0.8, alpha=0.3)
+
+ax2.axhline(0, color="gray", linestyle="--", linewidth=1)
+ax2.set_title("By Mean (mostly above or below entry)")
+ax2.set_xlabel("Hours since signal")
+ax2.grid(True)
+
+n_pos_mean = sum(e["mean_positive"] for e in all_paths)
+ax2.legend([
+    plt.Line2D([0], [0], color="green"),
+    plt.Line2D([0], [0], color="red"),
+], [
+    f"Positive mean ({n_pos_mean})",
+    f"Negative mean ({len(all_paths) - n_pos_mean})",
+])
+
+fig.suptitle(f"SuperTrend Signal Paths — {len(all_paths)} total", fontsize=13)
+plt.tight_layout()
+plt.show()
