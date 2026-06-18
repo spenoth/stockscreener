@@ -4,7 +4,11 @@ import time
 import traceback
 from contextlib import asynccontextmanager
 
+import pandas as pd
 import psycopg2
+from alpaca.data.historical import StockHistoricalDataClient
+from alpaca.data.requests import StockBarsRequest
+from alpaca.data.timeframe import TimeFrame
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -12,6 +16,7 @@ from fastapi.responses import JSONResponse
 from config import (
     DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD,
     CORS_ALLOWED_ORIGINS, CORS_ALLOWED_ORIGIN_REGEX, CORS_ALLOW_CREDENTIALS,
+    ALPACA_API_KEY, ALPACA_API_SECRET,
 )
 
 logging.basicConfig(
@@ -119,6 +124,97 @@ def get_current_bmsb(request: Request):
             request.url.path,
             exc,
             traceback.format_exc(),
+        )
+        return JSONResponse(status_code=500, content={"detail": "Internal server error"})
+    finally:
+        conn.close()
+
+@app.get("/api/retriever/prices/{symbol}/{timeframe}")
+def retrieve_historical_prices(request: Request, symbol: str, timeframe: str):
+    """
+    Retrieves historical price data for a given symbol from Alpaca and
+    populates the quant.prices table.
+
+    Path parameters:
+      - symbol:    Ticker symbol, e.g. "AAPL"
+      - timeframe: One of "1h" (hourly) or "1w" (weekly)
+
+    Returns a summary of how many bars were fetched and inserted.
+    """
+    SUPPORTED_TIMEFRAMES = {
+        "1h": TimeFrame.Hour,
+        "1w": TimeFrame.Week,
+    }
+
+    if timeframe not in SUPPORTED_TIMEFRAMES:
+        return JSONResponse(
+            status_code=400,
+            content={"detail": f"Unsupported timeframe '{timeframe}'. Use one of: {list(SUPPORTED_TIMEFRAMES.keys())}"},
+        )
+
+    start = pd.Timestamp("2016-01-01", tz="America/New_York")
+    end   = pd.Timestamp("2025-12-31", tz="America/New_York")
+
+    # --- Fetch from Alpaca ---
+    try:
+        client = StockHistoricalDataClient(ALPACA_API_KEY, ALPACA_API_SECRET)
+        bar_request = StockBarsRequest(
+            symbol_or_symbols=symbol.upper(),
+            timeframe=SUPPORTED_TIMEFRAMES[timeframe],
+            start=start,
+            end=end,
+        )
+        bars = client.get_stock_bars(bar_request).data.get(symbol.upper(), [])
+    except Exception as exc:
+        logger.error(
+            "Alpaca fetch failure for %s/%s on %s: %s\n%s",
+            symbol, timeframe, request.url.path, exc, traceback.format_exc(),
+        )
+        return JSONResponse(status_code=502, content={"detail": "Failed to fetch data from Alpaca"})
+
+    if not bars:
+        return {"symbol": symbol.upper(), "timeframe": timeframe, "inserted": 0, "message": "No data returned from Alpaca"}
+
+    # --- Persist to DB ---
+    try:
+        conn = get_connection()
+    except Exception as exc:
+        logger.error(
+            "DB connectivity failure on %s: %s\n%s",
+            request.url.path, exc, traceback.format_exc(),
+        )
+        return JSONResponse(status_code=503, content={"detail": "Database unavailable"})
+
+    try:
+        with conn:
+            with conn.cursor() as cur:
+                for bar in bars:
+                    cur.execute(
+                        """
+                        INSERT INTO quant.prices (
+                            ticker, timestamp, timeframe,
+                            open, high, low, close, volume
+                        )
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                        ON CONFLICT (ticker, timestamp, timeframe) DO NOTHING
+                        """,
+                        (
+                            symbol.upper(),
+                            bar.timestamp,
+                            timeframe,
+                            bar.open,
+                            bar.high,
+                            bar.low,
+                            bar.close,
+                            bar.volume,
+                        ),
+                    )
+        logger.info("Inserted %d bars for %s/%s", len(bars), symbol.upper(), timeframe)
+        return {"symbol": symbol.upper(), "timeframe": timeframe, "inserted": len(bars)}
+    except Exception as exc:
+        logger.error(
+            "DB insert failure for %s/%s on %s: %s\n%s",
+            symbol, timeframe, request.url.path, exc, traceback.format_exc(),
         )
         return JSONResponse(status_code=500, content={"detail": "Internal server error"})
     finally:

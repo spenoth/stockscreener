@@ -21,6 +21,7 @@
         <th>Symbol</th>
         <th>Exchange</th>
         <th>Chart</th>
+        <th>Historical Prices</th>
       </tr>
     </thead>
     <tbody>
@@ -35,8 +36,51 @@
             View on TradingView
           </a>
         </td>
+        <td>
+          <button class="load-btn" (click)="openDialog(stock)">Load Historical Prices Into DB</button>
+        </td>
       </tr>
     </tbody>
   </table>
+</div>
+
+<!-- ── Dialog Overlay ─────────────────────────────────────── -->
+<div *ngIf="dialogOpen" class="dialog-overlay" (click)="closeDialog()">
+  <div class="dialog" (click)="$event.stopPropagation()" role="dialog" aria-modal="true"
+       [attr.aria-label]="'Load historical prices for ' + dialogSymbol">
+
+    <h2 class="dialog-title">Load Historical Prices</h2>
+    <p class="dialog-subtitle">Ticker: <strong>{{ dialogSymbol }}</strong></p>
+
+    <!-- Timeframe select -->
+    <div class="dialog-field">
+      <label for="timeframe-select">Timeframe</label>
+      <select id="timeframe-select" [(ngModel)]="selectedTimeframe" [disabled]="loadingPrices">
+        <option *ngFor="let tf of timeframes" [value]="tf.value">{{ tf.label }}</option>
+      </select>
+    </div>
+
+    <!-- Spinner -->
+    <div *ngIf="loadingPrices" class="spinner-wrapper" aria-live="polite" aria-label="Loading">
+      <div class="spinner"></div>
+      <span>Fetching &amp; inserting data…</span>
+    </div>
+
+    <!-- Notification -->
+    <div *ngIf="notification === 'success'" class="notification notification--success" role="alert">
+      ✓ {{ notificationMessage }}
+    </div>
+    <div *ngIf="notification === 'error'" class="notification notification--error" role="alert">
+      ✗ {{ notificationMessage }}
+    </div>
+
+    <!-- Actions -->
+    <div class="dialog-actions">
+      <button class="btn-secondary" (click)="closeDialog()" [disabled]="loadingPrices">Cancel</button>
+      <button class="btn-primary" (click)="submitLoad()" [disabled]="loadingPrices">
+        {{ loadingPrices ? 'Loading…' : 'Load' }}
+      </button>
+    </div>
+  </div>
 </div>
 

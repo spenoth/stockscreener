@@ -47,6 +47,8 @@ services:
       DB_USER: myuser
       DB_PASSWORD: mypassword
       API_PORT: "8000"
+      ALPACA_API_KEY: "${ALPACA_API_KEY}"
+      ALPACA_API_SECRET: "${ALPACA_API_SECRET}"
     ports:
       - "8000:8000"
     depends_on:

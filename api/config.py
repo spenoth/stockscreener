@@ -1,5 +1,11 @@
 import os
 
+# ---------------------------------------------------------------------------
+# Alpaca API credentials
+# ---------------------------------------------------------------------------
+ALPACA_API_KEY = os.environ.get("ALPACA_API_KEY", "")
+ALPACA_API_SECRET = os.environ.get("ALPACA_API_SECRET", "")
+
 DB_HOST = os.environ.get("DB_HOST", "localhost")
 DB_PORT = int(os.environ.get("DB_PORT", "5432"))
 DB_NAME = os.environ.get("DB_NAME", "mydb")
