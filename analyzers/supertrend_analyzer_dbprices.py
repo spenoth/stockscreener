@@ -1,3 +1,5 @@
+import argparse
+
 import numpy as np
 import pandas as pd
 import pandas_ta as ta
@@ -254,6 +256,31 @@ def build_all_supertrend_paths(
     return results
 
 # =========================
+# CLI ARGUMENTS
+# =========================
+# Parse the ticker symbol from the command line so the same script can be
+# reused for any symbol stored in the quant.prices table.
+parser = argparse.ArgumentParser(
+    description="Run SuperTrend signal-path analysis for a given ticker."
+)
+parser.add_argument(
+    "ticker",
+    type=str,
+    help="Ticker symbol to analyze (e.g. TSLA, AAPL, NVDA).",
+)
+parser.add_argument(
+    "--timeframe",
+    type=str,
+    default="1h",
+    help="Price timeframe to fetch from the database. Default: 1h.",
+)
+args = parser.parse_args()
+
+# Normalize ticker to uppercase to match the convention used in the database
+ticker = args.ticker.upper()
+timeframe = args.timeframe
+
+# =========================
 # TIME RANGE
 # =========================
 # Define the date range for filtering (used if fetching from Alpaca or similar APIs)
@@ -270,11 +297,22 @@ DB_CONFIG = {
     "password": "mypassword"
 }
 
-# Connect to PostgreSQL and fetch hourly TSLA OHLCV prices
+# Connect to PostgreSQL and fetch hourly OHLCV prices for the requested ticker
 conn = psycopg2.connect(**DB_CONFIG)
 cur = conn.cursor()
-cur.execute("select timestamp, open, high, low, close from quant.prices where ticker='TSLA' and timeframe='1h' order by timestamp asc")
+cur.execute(
+    "select timestamp, open, high, low, close "
+    "from quant.prices "
+    "where ticker=%s and timeframe=%s "
+    "order by timestamp asc",
+    (ticker, timeframe),
+)
 rows = cur.fetchall()
+
+if not rows:
+    raise SystemExit(
+        f"No price data found for ticker={ticker!r} timeframe={timeframe!r}."
+    )
 
 # Build a dataframe from the raw query results
 df = pd.DataFrame(rows, columns=["timestamp", "open", "high", "low", "close"])
@@ -346,6 +384,6 @@ ax2.legend([
     f"Negative mean ({len(all_paths) - n_pos_mean})",
 ])
 
-fig.suptitle(f"SuperTrend Signal Paths — {len(all_paths)} total", fontsize=13)
+fig.suptitle(f"SuperTrend Signal Paths — {ticker} ({timeframe}) — {len(all_paths)} total", fontsize=13)
 plt.tight_layout()
 plt.show()
