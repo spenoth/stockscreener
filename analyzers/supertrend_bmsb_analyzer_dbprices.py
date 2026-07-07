@@ -1,4 +1,5 @@
 import argparse
+import time
 
 import numpy as np
 import pandas as pd
@@ -9,6 +10,8 @@ from datetime import datetime
 import pytz
 
 import psycopg2
+
+from trademetrics import TradeAnalyzer
 
 
 # =========================
@@ -383,6 +386,25 @@ def fetch_prices(cur, ticker, timeframe):
 
     return df
 
+def print_summary(summary):
+    print("=" * 60)
+    print("SIGNAL PERFORMANCE SUMMARY")
+    print("=" * 60)
+
+    print(f"Number of Trades          : {summary['num_trades']}")
+    print(f"Win Rate                  : {summary['win_rate']:.2%}")
+    print()
+
+    print(f"Average Winner            : {summary['avg_win']:.2f}%")
+    print(f"Average Loser             : {summary['avg_loss']:.2f}%")
+    print(f"Expectancy / Trade        : {summary['expectancy']:.2f}%")
+    print()
+
+    print(f"Average MFE               : {summary['avg_mfe']:.2f}%")
+    print(f"Average Drawdown (Winner) : {summary['avg_drawdown_winners']:.2f}%")
+    print(f"Average Drawdown (Loser)  : {summary['avg_drawdown_losers']:.2f}%")
+
+    print("=" * 60)
 
 # =========================
 # CLI ARGUMENTS
@@ -397,6 +419,7 @@ parser = argparse.ArgumentParser(
 parser.add_argument(
     "ticker",
     type=str,
+    default="TSLA",
     help="Ticker symbol to analyze (e.g. TSLA, AAPL, NVDA).",
 )
 parser.add_argument(
@@ -436,9 +459,15 @@ DB_CONFIG = {
 conn = psycopg2.connect(**DB_CONFIG)
 cur = conn.cursor()
 
+start_time = time.time()
+
 # Fetch hourly prices (for SuperTrend) and weekly prices (for BMSB).
 df_hourly = fetch_prices(cur, ticker, timeframe)
 df_weekly = fetch_prices(cur, ticker, weekly_timeframe)
+
+end_time_db_fetch = time.time()
+
+print("Time to fetch data took %d second", end_time_db_fetch - start_time)
 
 cur.close()
 conn.close()
@@ -483,6 +512,12 @@ if not all_paths:
     raise SystemExit(
         "No SuperTrend signals occurred above the BMSB — nothing to plot."
     )
+
+analyzer = TradeAnalyzer(all_paths)
+
+metrics = analyzer.analyze()
+
+print_summary(analyzer.summary())
 
 # =========================
 # PLOT
