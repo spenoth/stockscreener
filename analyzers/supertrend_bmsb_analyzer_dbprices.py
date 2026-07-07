@@ -152,7 +152,7 @@ def normalize_path(closes):
     base = closes[0]
 
     return [
-        (price / base - 1) * 100
+        (price / base - 1)
         for price in closes
     ]
 
@@ -339,6 +339,7 @@ def build_all_supertrend_paths_bmsb_filtered(
         results.append({
             "timestamp": timestamp,
             "path":      normalized,
+            "path_percent": [p * 100 for p in normalized],
             **classification,
         })
 
@@ -395,14 +396,14 @@ def print_summary(summary):
     print(f"Win Rate                  : {summary['win_rate']:.2%}")
     print()
 
-    print(f"Average Winner            : {summary['avg_win']:.2f}%")
-    print(f"Average Loser             : {summary['avg_loss']:.2f}%")
-    print(f"Expectancy / Trade        : {summary['expectancy']:.2f}%")
+    print(f"Average Winner            : {summary['avg_win']:.2%}")
+    print(f"Average Loser             : {summary['avg_loss']:.2%}")
+    print(f"Expectancy / Trade        : {summary['expectancy']:.2%}")
     print()
 
-    print(f"Average MFE               : {summary['avg_mfe']:.2f}%")
-    print(f"Average Drawdown (Winner) : {summary['avg_drawdown_winners']:.2f}%")
-    print(f"Average Drawdown (Loser)  : {summary['avg_drawdown_losers']:.2f}%")
+    print(f"Average MFE               : {summary['avg_mfe']:.2%}")
+    print(f"Average Drawdown (Winner) : {summary['avg_drawdown_winners']:.2%}")
+    print(f"Average Drawdown (Loser)  : {summary['avg_drawdown_losers']:.2%}")
 
     print("=" * 60)
 
@@ -419,7 +420,6 @@ parser = argparse.ArgumentParser(
 parser.add_argument(
     "ticker",
     type=str,
-    default="TSLA",
     help="Ticker symbol to analyze (e.g. TSLA, AAPL, NVDA).",
 )
 parser.add_argument(
@@ -527,7 +527,7 @@ fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 6), sharey=True)
 # --- Left plot: color-coded by endpoint (final % value) ---
 for entry in all_paths:
     color = "green" if entry["endpoint_positive"] else "red"
-    ax1.plot(entry["path"], color=color, linewidth=0.8, alpha=0.3)
+    ax1.plot(entry["path_percent"], color=color, linewidth=0.8, alpha=0.3)
 
 ax1.axhline(0, color="gray", linestyle="--", linewidth=1)
 ax1.set_title("By Endpoint (last value)")
@@ -547,7 +547,7 @@ ax1.legend([
 # --- Right plot: color-coded by mean (average % across the path) ---
 for entry in all_paths:
     color = "green" if entry["mean_positive"] else "red"
-    ax2.plot(entry["path"], color=color, linewidth=0.8, alpha=0.3)
+    ax2.plot(entry["path_percent"], color=color, linewidth=0.8, alpha=0.3)
 
 ax2.axhline(0, color="gray", linestyle="--", linewidth=1)
 ax2.set_title("By Mean (mostly above or below entry)")
