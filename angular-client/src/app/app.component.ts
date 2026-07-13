@@ -1,14 +1,16 @@
 import { Component } from '@angular/core';
 import { StockListComponent } from './components/stock-list/stock-list.component';
+import { BmsbSupertrendComponent } from './components/bmsb-supertrend/bmsb-supertrend.component';
 
 @Component({
   selector: 'app-root',
   standalone: true,
-  imports: [StockListComponent],
+  imports: [StockListComponent, BmsbSupertrendComponent],
   template: `
     <div class="app-container">
       <h1>Stock Screener</h1>
       <app-stock-list></app-stock-list>
+      <app-bmsb-supertrend></app-bmsb-supertrend>
     </div>
   `,
   styles: [`

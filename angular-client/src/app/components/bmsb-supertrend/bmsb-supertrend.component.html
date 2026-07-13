@@ -1,0 +1,46 @@
+<div class="bmsb-container">
+  <div class="controls">
+    <label for="symbol">Symbol:</label>
+    <input id="symbol" [(ngModel)]="symbol" (keyup.enter)="analyze()" placeholder="e.g. TSLA" />
+    <button (click)="analyze()" [disabled]="loading">
+      {{ loading ? 'Analyzing...' : 'Analyze' }}
+    </button>
+  </div>
+
+  <div *ngIf="error" class="error">{{ error }}</div>
+
+  <div *ngIf="data" class="results">
+    <div class="stats-bar">
+      <span>Total signals: <strong>{{ data.stats.total_signals }}</strong></span>
+      <span>Above BMSB: <strong>{{ data.stats.bmsb_above }}</strong></span>
+      <span>Below/Unknown: <strong>{{ data.stats.bmsb_below_or_unknown }}</strong></span>
+      <span>Paths plotted: <strong>{{ data.paths.length }}</strong></span>
+    </div>
+
+    <div class="charts">
+      <canvas #endpointCanvas width="700" height="400"></canvas>
+      <canvas #meanCanvas width="700" height="400"></canvas>
+    </div>
+
+    <div class="summary" *ngIf="data.summary">
+      <h3>Trade Summary</h3>
+      <table>
+        <tr *ngFor="let item of data.summary | keyvalue">
+          <td>{{ item.key }}</td>
+          <td>{{ item.value }}</td>
+        </tr>
+      </table>
+    </div>
+
+    <div class="drawdown" *ngIf="data.drawdown_percentiles">
+      <h3>Drawdown Percentiles</h3>
+      <table>
+        <tr *ngFor="let item of data.drawdown_percentiles | keyvalue">
+          <td>{{ item.key }}</td>
+          <td>{{ item.value | number:'1.2-2' }}%</td>
+        </tr>
+      </table>
+    </div>
+  </div>
+</div>
+

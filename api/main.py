@@ -228,7 +228,7 @@ def retrieve_historical_prices(request: Request, symbol: str, timeframe: str):
 
 
 @app.get("/api/analysis/bmsb-supertrend/{symbol}")
-def retrieve_historical_prices(request: Request, symbol: str):
+def retrieve_bmsb_supertrand_stats(request: Request, symbol: str):
     #Retrieve weekly and hourly prices from db
     try:
         conn = get_connection()
