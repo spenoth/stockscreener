@@ -26,7 +26,7 @@ from alpaca.data.historical import StockHistoricalDataClient
 from alpaca.data.requests import StockBarsRequest
 from alpaca.data.timeframe import TimeFrame
 
-os.environ["SSL_CERT_FILE"] = r"c:\Users\laszlb\Downloads\combined.pem"  # Fix SSL issues on some platforms
+#os.environ["SSL_CERT_FILE"] = r"c:\Users\laszlb\Downloads\combined.pem"  # Fix SSL issues on some platforms
 print("Default verify paths =", ssl.get_default_verify_paths())
 
 
