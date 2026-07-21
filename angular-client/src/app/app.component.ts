@@ -1,19 +1,19 @@
 import { Component } from '@angular/core';
-import { StockListComponent } from './components/stock-list/stock-list.component';
+import { RouterOutlet } from '@angular/router';
 
 @Component({
   selector: 'app-root',
   standalone: true,
-  imports: [StockListComponent],
+  imports: [RouterOutlet],
   template: `
     <div class="app-container">
       <h1>Stock Screener</h1>
-      <app-stock-list></app-stock-list>
+      <router-outlet></router-outlet>
     </div>
   `,
   styles: [`
     .app-container {
-      max-width: 900px;
+      max-width: 1200px;
       margin: 0 auto;
       padding: 20px;
     }
@@ -25,4 +25,3 @@ import { StockListComponent } from './components/stock-list/stock-list.component
   `]
 })
 export class AppComponent {}
-

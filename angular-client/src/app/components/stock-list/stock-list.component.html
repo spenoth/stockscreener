@@ -21,6 +21,7 @@
         <th>Symbol</th>
         <th>Exchange</th>
         <th>Chart</th>
+        <th>Analyze</th>
         <th>Historical Prices</th>
       </tr>
     </thead>
@@ -35,6 +36,9 @@
              rel="noopener noreferrer">
             View on TradingView
           </a>
+        </td>
+        <td>
+          <a [routerLink]="['/analyze', stock.symbol]" data-testid="analyze-link">Analyze</a>
         </td>
         <td>
           <button class="load-btn" (click)="openDialog(stock)">Load Historical Prices Into DB</button>
@@ -83,4 +87,3 @@
     </div>
   </div>
 </div>
-

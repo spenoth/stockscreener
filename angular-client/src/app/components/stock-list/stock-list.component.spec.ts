@@ -3,6 +3,7 @@ import { StockListComponent } from './stock-list.component';
 import { ScreenerService } from '../../services/screener.service';
 import { of, throwError, NEVER } from 'rxjs';
 import { Stock } from '../../models/stock.model';
+import { provideRouter } from '@angular/router';
 
 describe('StockListComponent', () => {
   let component: StockListComponent;
@@ -10,13 +11,14 @@ describe('StockListComponent', () => {
   let mockScreenerService: jasmine.SpyObj<ScreenerService>;
 
   beforeEach(async () => {
-    mockScreenerService = jasmine.createSpyObj('ScreenerService', ['getCurrentStocks']);
+    mockScreenerService = jasmine.createSpyObj('ScreenerService', ['getCurrentStocks', 'loadHistoricalPrices']);
     // Default to never-emitting observable so loading state is testable
     mockScreenerService.getCurrentStocks.and.returnValue(of([]));
 
     await TestBed.configureTestingModule({
       imports: [StockListComponent],
       providers: [
+        provideRouter([]),
         { provide: ScreenerService, useValue: mockScreenerService }
       ]
     }).compileComponents();
@@ -63,6 +65,21 @@ describe('StockListComponent', () => {
     expect(rows.length).toBe(2);
     expect(rows[0].textContent).toContain('AAPL');
     expect(rows[0].textContent).toContain('NASDAQ');
+    expect(el.textContent).toContain('Analyze');
+  });
+
+  it('should render an Analyze link for each stock symbol', () => {
+    const stocks: Stock[] = [
+      { symbol: 'AAPL', exchange: 'NASDAQ' },
+      { symbol: 'TSLA', exchange: 'NASDAQ' }
+    ];
+    mockScreenerService.getCurrentStocks.and.returnValue(of(stocks));
+    createComponent();
+
+    const links = fixture.nativeElement.querySelectorAll('[data-testid="analyze-link"]') as NodeListOf<HTMLAnchorElement>;
+    expect(links.length).toBe(2);
+    expect(links[0].getAttribute('href')).toBe('/analyze/AAPL');
+    expect(links[1].getAttribute('href')).toBe('/analyze/TSLA');
   });
 
   it('should show empty-state message when service returns empty array', () => {
@@ -112,4 +129,3 @@ describe('StockListComponent', () => {
     expect(rows.length).toBe(2);
   });
 });
-

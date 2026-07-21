@@ -1,6 +1,7 @@
 import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { RouterLink } from '@angular/router';
 import { ScreenerService } from '../../services/screener.service';
 import { Stock } from '../../models/stock.model';
 
@@ -9,7 +10,7 @@ type NotificationState = 'success' | 'error' | null;
 @Component({
   selector: 'app-stock-list',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, RouterLink],
   templateUrl: './stock-list.component.html',
   styleUrls: ['./stock-list.component.css']
 })
@@ -85,5 +86,3 @@ export class StockListComponent implements OnInit {
     });
   }
 }
-
-

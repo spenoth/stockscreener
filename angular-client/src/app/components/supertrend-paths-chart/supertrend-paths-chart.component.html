@@ -1,0 +1,52 @@
+<section class="supertrend-chart-section">
+  <h2>
+    SuperTrend Signal Paths — {{ ticker }} ({{ timeframe }}) — {{ totalCount }} total
+  </h2>
+
+  <div class="charts-grid">
+    <article class="chart-card">
+      <div class="legend-row" aria-label="Endpoint classification counts">
+        <span class="legend-item">
+          <span class="legend-swatch positive"></span>
+          Positive endpoint ({{ endpointPositiveCount }})
+        </span>
+        <span class="legend-item">
+          <span class="legend-swatch negative"></span>
+          Negative endpoint ({{ endpointNegativeCount }})
+        </span>
+      </div>
+
+      <div class="chart-container">
+        <canvas
+          baseChart
+          [type]="'line'"
+          [data]="endpointChartData"
+          [options]="endpointChartOptions">
+        </canvas>
+      </div>
+    </article>
+
+    <article class="chart-card">
+      <div class="legend-row" aria-label="Mean classification counts">
+        <span class="legend-item">
+          <span class="legend-swatch positive"></span>
+          Positive mean ({{ meanPositiveCount }})
+        </span>
+        <span class="legend-item">
+          <span class="legend-swatch negative"></span>
+          Negative mean ({{ meanNegativeCount }})
+        </span>
+      </div>
+
+      <div class="chart-container">
+        <canvas
+          baseChart
+          [type]="'line'"
+          [data]="meanChartData"
+          [options]="meanChartOptions">
+        </canvas>
+      </div>
+    </article>
+  </div>
+</section>
+

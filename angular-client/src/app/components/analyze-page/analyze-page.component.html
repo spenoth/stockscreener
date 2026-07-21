@@ -1,0 +1,34 @@
+<section class="analyze-page">
+  <a routerLink="/" class="back-link">← Back to stock list</a>
+
+  <h1>Analyze {{ ticker }}</h1>
+
+  <div *ngIf="loading" class="loading" data-testid="analysis-loading">
+    Loading analysis for {{ ticker }}…
+  </div>
+
+  <div *ngIf="!loading && error" class="error-message" data-testid="analysis-error">
+    Unable to load analysis for {{ ticker }}. Please try again later.
+  </div>
+
+  <div
+    *ngIf="!loading && !error && analysis && analysis.paths.length === 0"
+    class="empty-message"
+    data-testid="analysis-empty">
+    No SuperTrend signal paths are available for {{ ticker }}.
+  </div>
+
+  <div *ngIf="!loading && !error && analysis && analysis.paths.length > 0" class="analysis-summary">
+    <span *ngIf="analysis.stats">Total signals: {{ analysis.stats.total_signals }}</span>
+    <span *ngIf="analysis.stats">Above BMSB: {{ analysis.stats.bmsb_above }}</span>
+    <span *ngIf="analysis.summary">Win rate: {{ analysis.summary.win_rate | percent:'1.0-1' }}</span>
+  </div>
+
+  <app-supertrend-paths-chart
+    *ngIf="!loading && !error && analysis && analysis.paths.length > 0"
+    [ticker]="ticker"
+    [timeframe]="analysis.timeframe || timeframe"
+    [paths]="analysis.paths">
+  </app-supertrend-paths-chart>
+</section>
+

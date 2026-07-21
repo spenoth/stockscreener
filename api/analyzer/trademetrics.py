@@ -1,5 +1,6 @@
 import numpy as np
 from dataclasses import dataclass
+from typing import Optional
 
 
 @dataclass
@@ -15,7 +16,7 @@ class TradeMetrics:
     time_to_mfe: int
     time_to_mae: int
 
-    recovery_factor: float
+    recovery_factor: Optional[float]
 
     winner_final: bool
     winner_mean: bool
@@ -80,27 +81,27 @@ take-profit levels, and the overall quality of the signal.
             time_to_mae = np.argmin(path)
 
             if mae == 0:
-                recovery = np.inf
+                recovery = None
             else:
-                recovery = final_return / abs(mae)
+                recovery = float(final_return / abs(mae))
 
             self.metrics.append(
                 TradeMetrics(
                     timestamp=trade['timestamp'],
 
-                    final_return=final_return,
-                    mean_return=mean_return,
+                    final_return=float(final_return),
+                    mean_return=float(mean_return),
 
-                    mfe=mfe,
-                    mae=mae,
+                    mfe=float(mfe),
+                    mae=float(mae),
 
-                    time_to_mfe=time_to_mfe,
-                    time_to_mae=time_to_mae,
+                    time_to_mfe=int(time_to_mfe),
+                    time_to_mae=int(time_to_mae),
 
                     recovery_factor=recovery,
 
-                    winner_final=final_return > 0,
-                    winner_mean=mean_return > 0
+                    winner_final=bool(final_return > 0),
+                    winner_mean=bool(mean_return > 0)
                 )
             )
 
@@ -133,17 +134,17 @@ take-profit levels, and the overall quality of the signal.
         return {
             "num_trades": len(m),
 
-            "win_rate": win_rate,
+            "win_rate": float(win_rate),
 
-            "avg_win": avg_win,
-            "avg_loss": avg_loss,
+            "avg_win": float(avg_win),
+            "avg_loss": float(avg_loss),
 
-            "avg_mfe": avg_mfe,
+            "avg_mfe": float(avg_mfe),
 
-            "avg_drawdown_winners": avg_drawdown_win,
-            "avg_drawdown_losers": avg_drawdown_loss,
+            "avg_drawdown_winners": float(avg_drawdown_win),
+            "avg_drawdown_losers": float(avg_drawdown_loss),
 
-            "expectancy": expectancy,
+            "expectancy": float(expectancy),
         }
 
     # ----------------------------
@@ -153,11 +154,11 @@ take-profit levels, and the overall quality of the signal.
         dd = np.array([m.mae for m in self.metrics])
 
         return {
-            "50%": np.percentile(dd, 50),
-            "75%": np.percentile(dd, 75),
-            "90%": np.percentile(dd, 90),
-            "95%": np.percentile(dd, 95),
-            "99%": np.percentile(dd, 99),
+            "50%": float(np.percentile(dd, 50)),
+            "75%": float(np.percentile(dd, 75)),
+            "90%": float(np.percentile(dd, 90)),
+            "95%": float(np.percentile(dd, 95)),
+            "99%": float(np.percentile(dd, 99)),
         }
 
     # ----------------------------
@@ -176,14 +177,17 @@ take-profit levels, and the overall quality of the signal.
 
     def mean_path(self):
 
-        paths = np.vstack([t.path for t in self.all_paths])
+        raw = [np.asarray(t["path"]) for t in self.all_paths]
+        max_len = max(len(p) for p in raw)
+        padded = [np.pad(p, (0, max_len - len(p)), constant_values=np.nan) for p in raw]
+        paths = np.vstack(padded)
 
         return {
-            "mean": paths.mean(axis=0),
-            "median": np.median(paths, axis=0),
-            "std": paths.std(axis=0),
-            "q25": np.percentile(paths, 25, axis=0),
-            "q75": np.percentile(paths, 75, axis=0),
-            "q10": np.percentile(paths, 10, axis=0),
-            "q90": np.percentile(paths, 90, axis=0),
+            "mean": np.nanmean(paths, axis=0).tolist(),
+            "median": np.nanmedian(paths, axis=0).tolist(),
+            "std": np.nanstd(paths, axis=0).tolist(),
+            "q25": np.nanpercentile(paths, 25, axis=0).tolist(),
+            "q75": np.nanpercentile(paths, 75, axis=0).tolist(),
+            "q10": np.nanpercentile(paths, 10, axis=0).tolist(),
+            "q90": np.nanpercentile(paths, 90, axis=0).tolist(),
         }

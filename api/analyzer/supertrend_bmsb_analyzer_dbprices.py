@@ -152,12 +152,12 @@ def classify_path(normalized_path):
         dict with endpoint_positive, mean_positive, endpoint, mean.
     """
 
-    endpoint = normalized_path[-1]
-    mean     = sum(normalized_path) / len(normalized_path)
+    endpoint = float(normalized_path[-1])
+    mean     = float(sum(normalized_path) / len(normalized_path))
 
     return {
-        "endpoint_positive": endpoint > 0,
-        "mean_positive":     mean > 0,
+        "endpoint_positive": bool(endpoint > 0),
+        "mean_positive":     bool(mean > 0),
         "endpoint":          endpoint,
         "mean":              mean,
     }
@@ -298,9 +298,9 @@ def build_all_supertrend_paths_bmsb_filtered(
     ]
 
     stats = {
-        "total_signals":          len(all_starts),
-        "bmsb_above":             sum(bmsb_flags),
-        "bmsb_below_or_unknown":  len(all_starts) - sum(bmsb_flags),
+        "total_signals":          int(len(all_starts)),
+        "bmsb_above":             int(sum(bmsb_flags)),
+        "bmsb_below_or_unknown":  int(len(all_starts) - sum(bmsb_flags)),
     }
 
     if max_paths is not None:
@@ -324,7 +324,7 @@ def build_all_supertrend_paths_bmsb_filtered(
         classification = classify_path(normalized)
 
         results.append({
-            "timestamp": timestamp,
+            "timestamp": timestamp.isoformat() if hasattr(timestamp, "isoformat") else str(timestamp),
             "path":      normalized,
             "path_percent": [p * 100 for p in normalized],
             **classification,

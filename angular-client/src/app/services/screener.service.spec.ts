@@ -25,7 +25,7 @@ describe('ScreenerService', () => {
 
   it('should call the correct URL', () => {
     service.getCurrentStocks().subscribe();
-    const req = httpMock.expectOne('/api/screener/bmsb/current');
+    const req = httpMock.expectOne('http://localhost:8000/api/screener/bmsb/current');
     expect(req.request.method).toBe('GET');
     req.flush([]);
   });
@@ -42,7 +42,7 @@ describe('ScreenerService', () => {
       expect(stocks[0].exchange).toBe('NASDAQ');
     });
 
-    const req = httpMock.expectOne('/api/screener/bmsb/current');
+    const req = httpMock.expectOne('http://localhost:8000/api/screener/bmsb/current');
     req.flush(mockStocks);
   });
 
@@ -52,8 +52,17 @@ describe('ScreenerService', () => {
       expect(stocks.length).toBe(0);
     });
 
-    const req = httpMock.expectOne('/api/screener/bmsb/current');
+    const req = httpMock.expectOne('http://localhost:8000/api/screener/bmsb/current');
     req.flush([]);
   });
-});
 
+  it('should call the BMSB SuperTrend analysis endpoint with an encoded symbol', () => {
+    service.getBmsbSupertrendAnalysis('BRK.B').subscribe(response => {
+      expect(response.paths).toEqual([]);
+    });
+
+    const req = httpMock.expectOne('http://localhost:8000/api/analysis/bmsb-supertrend/BRK.B');
+    expect(req.request.method).toBe('GET');
+    req.flush({ paths: [] });
+  });
+});
