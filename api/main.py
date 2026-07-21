@@ -1,3 +1,23 @@
+import os
+from dataclasses import asdict
+
+from analyzer.supertrend_bmsb_analyzer_dbprices import fetch_prices, calculate_supertrend, calculate_bmsb, \
+    attach_bmsb_to_hourly, build_all_supertrend_paths_bmsb_filtered
+from analyzer.trademetrics import TradeAnalyzer
+
+# Force the corporate CA bundle for ALL outbound HTTPS (requests, urllib3, Alpaca SDK).
+# Must be set before any network-using library is imported/initialized.
+_CA_BUNDLE = "/etc/ssl/certs/ca-certificates.crt"
+os.environ["REQUESTS_CA_BUNDLE"] = _CA_BUNDLE
+os.environ["SSL_CERT_FILE"] = _CA_BUNDLE
+os.environ["CURL_CA_BUNDLE"] = _CA_BUNDLE
+
+# The Alpaca SDK calls certifi.where() directly when building its requests.Session,
+# which bypasses the REQUESTS_CA_BUNDLE env var entirely.
+# Monkey-patch certifi so it returns the system CA bundle (which includes Zscaler).
+import certifi
+certifi.where = lambda: _CA_BUNDLE
+
 import logging
 import logging.handlers
 import time
@@ -219,3 +239,80 @@ def retrieve_historical_prices(request: Request, symbol: str, timeframe: str):
         return JSONResponse(status_code=500, content={"detail": "Internal server error"})
     finally:
         conn.close()
+
+@app.get("/api/analysis/bmsb-supertrend/{symbol}")
+def retrieve_bmsb_supertrand_stats(request: Request, symbol: str):
+    #Retrieve weekly and hourly prices from db
+    try:
+        conn = get_connection()
+    except Exception as exc:
+        logger.error(
+            "DB connectivity failure on %s: %s\n%s",
+            request.url.path, exc, traceback.format_exc(),
+        )
+        return JSONResponse(status_code=503, content={"detail": "Database unavailable"})
+
+    try:
+        with conn:
+            with conn.cursor() as cur:
+                start_time = time.time()
+                df_hourly = fetch_prices(cur, symbol, "1h")
+                df_weekly = fetch_prices(cur, symbol, "1w")
+                end_time_db_fetch = time.time()
+                logger.info ("Fetched hourly and weekly prices for %s. Took %d seconds", symbol, end_time_db_fetch-start_time)
+    except Exception as exc:
+        logger.error(
+            "Could not fetch prices for %s", symbol
+        )
+
+    logger.debug(df_hourly.head(20))
+    logger.debug(df_weekly.head(20))
+    cur.close()
+    conn.close()
+
+    # INDICATOR CALCULATIONS
+    # =========================
+    # SuperTrend on the hourly series.
+    df_hourly_st = calculate_supertrend(df_hourly)
+
+    # BMSB on the weekly series.
+    df_weekly_bmsb = calculate_bmsb(df_weekly)
+
+    df_combined = attach_bmsb_to_hourly(df_hourly_st, df_weekly_bmsb)
+
+    # =========================
+    # BUILD BMSB-FILTERED PATHS
+    # =========================
+    all_paths, stats = build_all_supertrend_paths_bmsb_filtered(
+        df_combined,
+        max_hours=40,
+        max_paths=200,
+    )
+
+    logger.info(
+        f"SuperTrend signals — total: {stats['total_signals']}, "
+        f"above BMSB: {stats['bmsb_above']}, "
+        f"below/unknown BMSB: {stats['bmsb_below_or_unknown']}"
+    )
+    logger.info(f"Qualifying paths plotted: {len(all_paths)}")
+
+    analyzer = TradeAnalyzer(all_paths)
+
+    metrics = analyzer.analyze()
+
+    paths_json = [
+        {
+            **p,
+            "path": p["path"].tolist() if hasattr(p["path"], "tolist") else p["path"]
+        }
+        for p in all_paths
+    ]
+
+    return {
+        "stats": stats,
+        "paths": paths_json,
+        "metrics": [asdict(m) for m in metrics],
+        "summary": analyzer.summary(),
+        "drawdown_percentiles": analyzer.drawdown_percentiles(),
+        "mean_path": analyzer.mean_path(),
+    }
