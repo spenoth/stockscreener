@@ -1,8 +1,14 @@
 import os
-from dataclasses import asdict
+import threading
 
-from analyzer.supertrend_bmsb_analyzer_dbprices import fetch_prices, calculate_supertrend, calculate_bmsb, \
-    attach_bmsb_to_hourly, build_all_supertrend_paths_bmsb_filtered
+from dataclasses import asdict
+from datetime import datetime, timezone, timedelta
+
+from analyzer.supertrend_bmsb_analyzer_dbprices import (
+    calculate_supertrend, calculate_bmsb,
+    attach_bmsb_to_hourly, build_all_supertrend_paths_bmsb_filtered,
+    fetch_prices,
+)
 from analyzer.trademetrics import TradeAnalyzer
 
 # Force the corporate CA bundle for ALL outbound HTTPS (requests, urllib3, Alpaca SDK).
@@ -113,6 +119,185 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
+
+# ---------------------------------------------------------------------------
+# BMSB Screener — background job
+# ---------------------------------------------------------------------------
+
+WATCHLIST_NAME = "BMSB_ABOVE"
+
+
+def _run_bmsb_screener_job():
+    """
+    Replicates bmsb_above_screener.py logic.
+    Runs in a background thread — all errors are caught and logged.
+    """
+    import pandas_ta as ta
+
+    run_timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    logger.info("=== BMSB screener job started at %s ===", run_timestamp)
+
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+    except Exception as exc:
+        logger.error("BMSB job FATAL: cannot connect to database: %s", exc)
+        return
+
+    try:
+        client = StockHistoricalDataClient(ALPACA_API_KEY, ALPACA_API_SECRET)
+
+        # Watchlist id
+        cur.execute("SELECT id FROM quant.watchlists WHERE name = %s", (WATCHLIST_NAME,))
+        row = cur.fetchone()
+        if row is None:
+            logger.error("BMSB job FATAL: watchlist '%s' not found", WATCHLIST_NAME)
+            return
+        watchlist_id = row[0]
+
+        # Next version number
+        cur.execute(
+            "SELECT COALESCE(MAX(version), 0) + 1 FROM quant.watchlist_versions WHERE watchlist_id = %s",
+            (watchlist_id,),
+        )
+        version = cur.fetchone()[0]
+
+        # Create version row before scanning (BR-3)
+        cur.execute(
+            "INSERT INTO quant.watchlist_versions (watchlist_id, version) VALUES (%s, %s) RETURNING id",
+            (watchlist_id, version),
+        )
+        watchlist_version_id = cur.fetchone()[0]
+        conn.commit()
+        logger.info("BMSB job version=%s watchlist_version_id=%s", version, watchlist_version_id)
+
+        # Load active tickers
+        cur.execute("SELECT symbol FROM quant.tickers WHERE active = true ORDER BY symbol")
+        tickers = [r[0] for r in cur.fetchall()]
+        total_tickers = len(tickers)
+        logger.info("BMSB job total_tickers=%s", total_tickers)
+
+        # Time window
+        end_dt = datetime.now(timezone.utc) - timedelta(minutes=60)
+        start_dt = end_dt - timedelta(weeks=55)
+
+        scanned_count = 0
+        failed_count = 0
+
+        for symbol in tickers:
+            try:
+                request = StockBarsRequest(
+                    symbol_or_symbols=symbol,
+                    timeframe=TimeFrame.Week,
+                    start=start_dt,
+                    end=end_dt,
+                    feed="iex",
+                )
+                bars = client.get_stock_bars(request).data.get(symbol, [])
+
+                if len(bars) < 30:
+                    scanned_count += 1
+                    logger.info(
+                        "run_timestamp=%s | symbol=%s | scan_status=succeeded | pass_result=fail (insufficient data)",
+                        run_timestamp, symbol,
+                    )
+                    continue
+
+                df = pd.DataFrame([{"timestamp": b.timestamp, "close": b.close} for b in bars])
+                df = df.sort_values("timestamp")
+                df["sma20"] = ta.sma(df["close"], length=20)
+                df["ema21"] = ta.ema(df["close"], length=21)
+                df = df.dropna()
+
+                latest = df.iloc[-1]
+                is_above = (latest["close"] > latest["sma20"]) and (latest["close"] > latest["ema21"])
+
+                if is_above:
+                    try:
+                        cur.execute(
+                            "INSERT INTO quant.watchlist_items (watchlist_version_id, ticker) VALUES (%s, %s) ON CONFLICT DO NOTHING",
+                            (watchlist_version_id, symbol),
+                        )
+                        conn.commit()
+                    except Exception as db_exc:
+                        conn.rollback()
+                        logger.error("BMSB job symbol=%s DB insert failed: %s", symbol, db_exc)
+                        failed_count += 1
+                        continue
+
+                scanned_count += 1
+                logger.info(
+                    "run_timestamp=%s | symbol=%s | scan_status=succeeded | pass_result=%s",
+                    run_timestamp, symbol, "pass" if is_above else "fail",
+                )
+
+            except Exception as exc:
+                failed_count += 1
+                logger.error("BMSB job symbol=%s failed: %s", symbol, exc)
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
+
+        # Determine and persist outcome (BR-4)
+        if scanned_count == 0:
+            run_outcome = "error"
+        elif scanned_count == total_tickers:
+            run_outcome = "success"
+        else:
+            run_outcome = "warning"
+
+        logger.info(
+            "BMSB job run_outcome=%s total_tickers=%s scanned_count=%s failed_count=%s",
+            run_outcome, total_tickers, scanned_count, failed_count,
+        )
+
+        try:
+            cur.execute(
+                """
+                UPDATE quant.watchlist_versions
+                SET run_outcome   = %s,
+                    total_tickers = %s,
+                    scanned_count = %s,
+                    failed_count  = %s
+                WHERE id = %s
+                """,
+                (run_outcome, total_tickers, scanned_count, failed_count, watchlist_version_id),
+            )
+            conn.commit()
+        except Exception as exc:
+            logger.error("BMSB job ERROR: could not persist run_outcome: %s", exc)
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+
+        logger.info("=== BMSB screener job complete: version=%s outcome=%s ===", version, run_outcome)
+
+    except Exception as exc:
+        logger.error("BMSB job unhandled exception: %s\n%s", exc, traceback.format_exc())
+    finally:
+        try:
+            cur.close()
+            conn.close()
+        except Exception:
+            pass
+
+
+@app.post("/api/screener/bmsb/run")
+def trigger_bmsb_screener(request: Request):
+    """
+    Spawns a background thread that runs the BMSB screener job.
+    Returns immediately with 202 Accepted.
+    """
+    t = threading.Thread(target=_run_bmsb_screener_job, daemon=True)
+    t.start()
+    logger.info("BMSB screener job spawned (thread id=%s)", t.ident)
+    return JSONResponse(
+        status_code=202,
+        content={"detail": "BMSB screener job started", "status": "accepted"},
+    )
 
 
 # ---------------------------------------------------------------------------
