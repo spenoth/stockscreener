@@ -4,3 +4,4 @@ angular-client/dist
 .idea
 angular-client/.angular
 angular-client/package-lock.json
+quant-db/build.env.example

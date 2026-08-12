@@ -35,9 +35,13 @@ services:
       "
 
   api:
+    env_file:
+      - ./build.env
     build:
       context: ../api
       dockerfile: Dockerfile
+      args:
+        USE_CORP_CA: ${USE_CORP_CA:-false}
     container_name: stockscreener_api
     restart: always
     environment:
